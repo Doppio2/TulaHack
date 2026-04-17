@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>RouteOptimizer</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      display: flex;
+      height: 100vh;
+      background: #1a1a2e;
+      color: #eee;
+    }
+
+    /* ===== SIDEBAR ===== */
+    #sidebar {
+      width: 340px;
+      min-width: 340px;
+      background: #16213e;
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      gap: 16px;
+      overflow-y: auto;
+      z-index: 10;
+      box-shadow: 4px 0 20px rgba(0,0,0,0.4);
+    }
+
+    #sidebar h1 {
+      font-size: 1.3rem;
+      color: #4cc9f0;
+      letter-spacing: 1px;
+      text-align: center;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #0f3460;
+    }
+
+    label.field-label {
+      font-size: 0.75rem;
+      color: #8899aa;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+      display: block;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #0f3460;
+      background: #0f3460;
+      color: #eee;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="text"]:focus { border-color: #4cc9f0; }
+
+    .field-group { display: flex; flex-direction: column; }
+
+    /* ===== CATEGORIES ===== */
+    .categories-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .cat-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #0f3460;
+      border-radius: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: border-color 0.15s, background 0.15s;
+      user-select: none;
+    }
+    .cat-item:hover { border-color: #4cc9f0; }
+    .cat-item.active { border-color: #4cc9f0; background: #1a4a80; }
+
+    .cat-item input[type="checkbox"] { display: none; }
+    .cat-icon { font-size: 1.1rem; }
+    .cat-name { font-size: 0.82rem; color: #ccc; }
+
+    /* ===== MAX POI ===== */
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    input[type="range"] {
+      flex: 1;
+      accent-color: #4cc9f0;
+    }
+    #maxPoisVal {
+      min-width: 24px;
+      text-align: right;
+      color: #4cc9f0;
+      font-weight: bold;
+    }
+
+    /* ===== TRANSPORT ===== */
+    .transport-row {
+      display: flex;
+      gap: 8px;
+    }
+    .transport-btn {
+      flex: 1;
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid #0f3460;
+      background: #0f3460;
+      color: #ccc;
+      cursor: pointer;
+      font-size: 0.82rem;
+      text-align: center;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .transport-btn.active { border-color: #4cc9f0; background: #1a4a80; color: #fff; }
+
+    /* ===== BUILD BUTTON ===== */
+    #buildBtn {
+      width: 100%;
+      padding: 13px;
+      border-radius: 8px;
+      border: none;
+      background: linear-gradient(135deg, #4cc9f0, #4361ee);
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      letter-spacing: 0.5px;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    #buildBtn:hover { opacity: 0.9; }
+    #buildBtn:active { transform: scale(0.98); }
+    #buildBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ===== STATUS / RESULTS ===== */
+    #status {
+      font-size: 0.82rem;
+      color: #f72585;
+      min-height: 18px;
+      text-align: center;
+    }
+
+    #results {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      background: #0f3460;
+      border-radius: 8px;
+      padding: 10px 14px;
+    }
+    .stat-label { font-size: 0.78rem; color: #8899aa; }
+    .stat-val { font-size: 0.95rem; font-weight: 600; }
+    .stat-val.green { color: #4ade80; }
+    .stat-val.blue { color: #60a5fa; }
+    .stat-val.yellow { color: #facc15; }
+
+    .legend {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      font-size: 0.8rem;
+      color: #aaa;
+    }
+    .legend-dot {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 5px;
+      vertical-align: middle;
+    }
+
+    /* ===== POI LIST ===== */
+    #poiList { display: flex; flex-direction: column; gap: 6px; }
+    .poi-item {
+      background: #0f3460;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.82rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .poi-num {
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: #4cc9f0;
+      color: #000;
+      font-weight: bold;
+      font-size: 0.72rem;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    /* ===== MAP ===== */
+    #map {
+      flex: 1;
+      z-index: 1;
+    }
+
+    /* ===== LOADER ===== */
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid #ffffff44;
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h1>🗺️ RouteOptimizer</h1>
+
+  <div class="field-group">
+    <label class="field-label">Начальная точка</label>
+    <input type="text" id="startAddr" placeholder="Москва, Красная площадь"/>
+  </div>
+
+  <div class="field-group">
+    <label class="field-label">Конечная точка</label>
+    <input type="text" id="endAddr" placeholder="Москва, Парк Горького"/>
+  </div>
+
+  <div class="field-group">
+    <label class="field-label">Категории интересов</label>
+    <div class="categories-grid">
+      <label class="cat-item active">
+        <input type="checkbox" value="restaurant" checked/>
+        <span class="cat-icon">🍽️</span>
+        <span class="cat-name">Рестораны</span>
+      </label>
+      <label class="cat-item active">
+        <input type="checkbox" value="cafe" checked/>
+        <span class="cat-icon">☕</span>
+        <span class="cat-name">Кафе</span>
+      </label>
+      <label class="cat-item active">
+        <input type="checkbox" value="museum" checked/>
+        <span class="cat-icon">🏛️</span>
+        <span class="cat-name">Музеи</span>
+      </label>
+      <label class="cat-item">
+        <input type="checkbox" value="park"/>
+        <span class="cat-icon">🌳</span>
+        <span class="cat-name">Парки</span>
+      </label>
+      <label class="cat-item">
+        <input type="checkbox" value="shop"/>
+        <span class="cat-icon">🛒</span>
+        <span class="cat-name">Магазины</span>
+      </label>
+      <label class="cat-item">
+        <input type="checkbox" value="hotel"/>
+        <span class="cat-icon">🏨</span>
+        <span class="cat-name">Отели</span>
+      </label>
+      <label class="cat-item">
+        <input type="checkbox" value="pharmacy"/>
+        <span class="cat-icon">💊</span>
+        <span class="cat-name">Аптеки</span>
+      </label>
+      <label class="cat-item">
+        <input type="checkbox" value="atm"/>
+        <span class="cat-icon">🏧</span>
+        <span class="cat-name">Банкоматы</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="field-group">
+    <label class="field-label">Макс. точек интереса: <span id="maxPoisVal">5</span></label>
+    <div class="slider-row">
+      <span style="font-size:0.8rem;color:#aaa">1</span>
+      <input type="range" id="maxPois" min="1" max="10" value="5"/>
+      <span style="font-size:0.8rem;color:#aaa">10</span>
+    </div>
+  </div>
+
+  <div class="field-group">
+    <label class="field-label">Транспорт</label>
+    <div class="transport-row">
+      <div class="transport-btn active" data-mode="driving-car">🚗 Авто</div>
+      <div class="transport-btn" data-mode="cycling-regular">🚲 Вело</div>
+      <div class="transport-btn" data-mode="foot-walking">🚶 Пешком</div>
+    </div>
+  </div>
+
+  <button id="buildBtn">Построить маршрут</button>
+  <div id="status"></div>
+
+  <div id="results">
+    <div class="legend">
+      <span><span class="legend-dot" style="background:#3b82f6"></span>Исходный</span>
+      <span><span class="legend-dot" style="background:#22c55e"></span>Оптимальный</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">До оптимизации</span>
+      <span class="stat-val blue" id="distBefore">—</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">После оптимизации</span>
+      <span class="stat-val green" id="distAfter">—</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Экономия</span>
+      <span class="stat-val yellow" id="saving">—</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">⚡ C++ алгоритм</span>
+      <span class="stat-val" id="compMs" style="color:#c084fc">—</span>
+    </div>
+    <label class="field-label" style="margin-top:4px">Точки маршрута</label>
+    <div id="poiList"></div>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  // ===== MAP INIT =====
+  const map = L.map('map').setView([55.7558, 37.6176], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 19
+  }).addTo(map);
+
+  // ===== STATE =====
+  let naiveLine = null;
+  let optimizedLine = null;
+  let markers = [];
+  let transportMode = 'driving-car';
+
+  // ===== CATEGORY TOGGLE =====
+  document.querySelectorAll('.cat-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const cb = item.querySelector('input[type="checkbox"]');
+      cb.checked = !cb.checked;
+      item.classList.toggle('active', cb.checked);
+    });
+  });
+
+  // ===== SLIDER =====
+  const maxPoisInput = document.getElementById('maxPois');
+  const maxPoisVal = document.getElementById('maxPoisVal');
+  maxPoisInput.addEventListener('input', () => { maxPoisVal.textContent = maxPoisInput.value; });
+
+  // ===== TRANSPORT =====
+  document.querySelectorAll('.transport-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.transport-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      transportMode = btn.dataset.mode;
+    });
+  });
+
+  // ===== HELPERS =====
+  function clearMap() {
+    markers.forEach(m => map.removeLayer(m));
+    markers = [];
+    if (naiveLine) { map.removeLayer(naiveLine); naiveLine = null; }
+    if (optimizedLine) { map.removeLayer(optimizedLine); optimizedLine = null; }
+  }
+
+  function setStatus(msg, isError = false) {
+    const el = document.getElementById('status');
+    el.style.color = isError ? '#f72585' : '#4cc9f0';
+    el.innerHTML = msg;
+  }
+
+  function formatDist(meters) {
+    return meters >= 1000
+      ? (meters / 1000).toFixed(1) + ' км'
+      : Math.round(meters) + ' м';
+  }
+
+  function makeIcon(color, label) {
+    return L.divIcon({
+      className: '',
+      html: `<div style="
+        background:${color};
+        color:#fff;
+        border-radius:50%;
+        width:28px;height:28px;
+        display:flex;align-items:center;justify-content:center;
+        font-size:11px;font-weight:bold;
+        border:2px solid rgba(255,255,255,0.7);
+        box-shadow:0 2px 6px rgba(0,0,0,0.4);
+      ">${label}</div>`,
+      iconSize: [28, 28],
+      iconAnchor: [14, 14]
+    });
+  }
+
+  // ===== BUILD ROUTE =====
+  document.getElementById('buildBtn').addEventListener('click', async () => {
+    const startAddress = document.getElementById('startAddr').value.trim();
+    const endAddress   = document.getElementById('endAddr').value.trim();
+    const categories   = [...document.querySelectorAll('.cat-item input:checked')].map(c => c.value);
+    const maxPois      = parseInt(maxPoisInput.value);
+
+    if (!startAddress || !endAddress) {
+      setStatus('Введите начальную и конечную точки', true); return;
+    }
+    if (categories.length === 0) {
+      setStatus('Выберите хотя бы одну категорию', true); return;
+    }
+
+    const btn = document.getElementById('buildBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Строим маршрут...';
+    setStatus('');
+    clearMap();
+    document.getElementById('results').style.display = 'none';
+
+    try {
+      const resp = await fetch('/api/route/build', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startAddress, endAddress, categories, maxPois, transportMode })
+      });
+
+      if (!resp.ok) {
+        const err = await resp.text();
+        throw new Error(err || `HTTP ${resp.status}`);
+      }
+
+      const data = await resp.json();
+      renderResult(data);
+
+    } catch (e) {
+      setStatus('Ошибка: ' + e.message, true);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Построить маршрут';
+    }
+  });
+
+  // ===== RENDER =====
+  function renderResult(data) {
+    const coords = data.orderedCoordinates;   // [{lat,lon}, ...]
+    const pois   = data.pois || [];
+    const bounds = [];
+
+    // --- Start marker ---
+    const start = coords[0];
+    const startM = L.marker([start.lat, start.lon], { icon: makeIcon('#4cc9f0', 'A') })
+      .bindPopup('<b>Старт</b>').addTo(map);
+    markers.push(startM);
+    bounds.push([start.lat, start.lon]);
+
+    // --- POI markers ---
+    pois.forEach((poi, i) => {
+      const m = L.marker([poi.lat, poi.lon], { icon: makeIcon('#f59e0b', i + 1) })
+        .bindPopup(`<b>${poi.name}</b><br/><small>${poi.category}</small>`)
+        .addTo(map);
+      markers.push(m);
+      bounds.push([poi.lat, poi.lon]);
+    });
+
+    // --- End marker ---
+    const end = coords[coords.length - 1];
+    const endM = L.marker([end.lat, end.lon], { icon: makeIcon('#4ade80', 'B') })
+      .bindPopup('<b>Финиш</b>').addTo(map);
+    markers.push(endM);
+    bounds.push([end.lat, end.lon]);
+
+    // --- Naive route (blue) — sequential order ---
+    const naiveCoords = coords.map(c => [c.lat, c.lon]);
+    naiveLine = L.polyline(naiveCoords, {
+      color: '#3b82f6', weight: 3, opacity: 0.5, dashArray: '6 6'
+    }).addTo(map);
+
+    // --- Optimized route (green) — from geojson if present ---
+    if (data.geojson && data.geojson.features) {
+      const geoLayer = L.geoJSON(data.geojson, {
+        style: { color: '#22c55e', weight: 4, opacity: 0.85 }
+      }).addTo(map);
+      optimizedLine = geoLayer;
+    } else {
+      optimizedLine = L.polyline(naiveCoords, {
+        color: '#22c55e', weight: 4, opacity: 0.85
+      }).addTo(map);
+    }
+
+    // --- Fit map ---
+    if (bounds.length > 0) map.fitBounds(bounds, { padding: [40, 40] });
+
+    // --- Stats ---
+    document.getElementById('distBefore').textContent = formatDist(data.originalDistance || 0);
+    document.getElementById('distAfter').textContent  = formatDist(data.optimizedDistance || 0);
+    document.getElementById('saving').textContent     =
+      data.savingPercent != null ? `${data.savingPercent.toFixed(1)}%` : '—';
+    document.getElementById('compMs').textContent     =
+      data.computationMs != null ? `${data.computationMs} мс` : '—';
+
+    // --- POI list ---
+    const list = document.getElementById('poiList');
+    list.innerHTML = '';
+    pois.forEach((poi, i) => {
+      const div = document.createElement('div');
+      div.className = 'poi-item';
+      div.innerHTML = `<div class="poi-num">${i+1}</div><span>${poi.name}</span>`;
+      div.style.cursor = 'pointer';
+      div.addEventListener('click', () => {
+        map.setView([poi.lat, poi.lon], 16);
+        markers[i + 1].openPopup();
+      });
+      list.appendChild(div);
+    });
+
+    document.getElementById('results').style.display = 'flex';
+    setStatus('');
+  }
+</script>
+</body>
+</html>

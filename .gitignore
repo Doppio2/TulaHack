@@ -1,3 +1,11 @@
+# Секреты — не коммитить
+src/main/resources/application.properties
+
+# Runtime файлы
+routes.db
+optimizer_input.json
+optimizer_output.json
+
 # Java / Maven
 HELP.md
 target/
