@@ -88,6 +88,8 @@ typedef struct ast_node
         bool JsonBool;
     };
 
+    double JsonFloat;
+
 } ast_node;
 
 /*                  For tokens                     */

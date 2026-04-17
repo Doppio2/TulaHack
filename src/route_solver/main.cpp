@@ -4,115 +4,344 @@
 // -- .c --
 #include "simple_json.c"
 
+typedef int time_min;
+
+struct route_point
+{
+    char *ID;
+    char *Name;
+
+    f64 Lat;
+    f64 Lon;
+
+    char *Category;
+    char *Rubric;
+    char *WorkingHours;
+
+    f32 Rating;
+    int Reviews;
+
+    int MatrixIndex;
+
+    int Score;
+    time_min VisitDuration;
+    time_min OpenTime;
+    time_min CloseTime;
+};
+
+struct travel_matrix
+{
+    int PointCount;
+
+    int *Distances;
+    int *Durations;
+};
+
+struct input_route_data
+{
+    int PointCount;
+    route_point *Points;
+
+    travel_matrix TravelMatrix;
+
+    int StartMatrixIndex;
+    time_min StartTime;
+    time_min EndTime;
+};
+
+struct visit
+{
+    char *PointID;
+    int PointIndex;
+    int MatrixIndex;
+
+    time_min ArrivalTime;
+    time_min VisitStartTime;
+    time_min VisitEndTime;
+
+    int TravelFromPrevious;
+    int WaitingTime;
+    int Score;
+};
+
+struct route_result
+{
+    int VisitCount;
+    visit *Visits;
+
+    int TotalScore;
+    int TotalTravelTime;
+    int TotalWaitingTime;
+
+    time_min FinishTime;
+};
+
+func int
+GetMatrixValue(int *Matrix, int PointCount, int FromIndex, int ToIndex)
+{
+    int Result = Matrix[FromIndex*PointCount+ToIndex];
+
+    return Result;
+}
+
+func int
+GetTravelDuration(travel_matrix *Matrix, int FromIndex, int ToIndex)
+{
+    int Result = GetMatrixValue(Matrix->Durations, Matrix->PointCount, FromIndex, ToIndex);
+
+    return Result;
+}
+
+func int
+GetTravelDistance(travel_matrix *Matrix, int FromIndex, int ToIndex)
+{
+    int Result = GetMatrixValue(Matrix->Distances, Matrix->PointCount, FromIndex, ToIndex);
+
+    return Result;
+}
+
+// ???????
+func int
+GetDefaultScore(route_point *Point)
+{
+    int Result = 1;
+
+    if(Point->Rating > 0)
+    {
+        Result = (int)(Point->Rating * 2.0f);
+    }
+
+    return Result;
+}
+
+func time_min
+GetDefaultVisitDuration(route_point *Point)
+{
+    time_min Result = 30;
+
+    if(Point->Category && strcmp(Point->Category, "restaurant") == 0)
+    {
+        Result = 60;
+    }
+
+    return Result;
+}
+
+func void
+SetDefaultRoutePointSchedule(route_point *Point)
+{
+    // TODO: Parse WorkingHours later. Current JSON has human-readable text.
+    Point->OpenTime = 0;
+    Point->CloseTime = 1440;
+}
+
+func void
+BuildInputRouteDataFromJson(ast_node *AST, input_route_data *InputRouteData, arena *Arena)
+{
+    ast_node *PointsNode = shget(AST->JsonObj, "points");
+
+    InputRouteData->PointCount = (int)arrlen(PointsNode->JsonArr);
+    InputRouteData->Points = PushArray(Arena, route_point, InputRouteData->PointCount);
+
+    for(int PointIndex = 0;
+        PointIndex < InputRouteData->PointCount;
+        ++PointIndex)
+    {
+        ast_node *PointNode = PointsNode->JsonArr[PointIndex];
+        route_point *Point = InputRouteData->Points + PointIndex;
+
+        ast_node *ID = shget(PointNode->JsonObj, "id");
+        ast_node *Name = shget(PointNode->JsonObj, "name");
+        ast_node *Lat = shget(PointNode->JsonObj, "lat");
+        ast_node *Lon = shget(PointNode->JsonObj, "lon");
+        ast_node *Category = shget(PointNode->JsonObj, "category");
+        ast_node *Rubric = shget(PointNode->JsonObj, "rubric");
+        ast_node *WorkingHours = shget(PointNode->JsonObj, "working_hours");
+        ast_node *Rating = shget(PointNode->JsonObj, "rating");
+        ast_node *Reviews = shget(PointNode->JsonObj, "reviews");
+
+        Point->ID = ID->JsonStr;
+        Point->Name = Name->JsonStr;
+        Point->Lat = Lat->JsonFloat;
+        Point->Lon = Lon->JsonFloat;
+        Point->Category = Category->JsonStr;
+        Point->Rubric = Rubric->JsonStr;
+        Point->WorkingHours = WorkingHours->JsonStr;
+        Point->Rating = (f32)Rating->JsonFloat;
+        Point->Reviews = Reviews->JsonNum;
+        Point->MatrixIndex = PointIndex;
+
+        Point->Score = GetDefaultScore(Point);
+        Point->VisitDuration = GetDefaultVisitDuration(Point);
+        SetDefaultRoutePointSchedule(Point);
+    }
+
+    ast_node *TravelMatrixNode = shget(AST->JsonObj, "travel_matrix");
+    ast_node *DistancesNode = shget(TravelMatrixNode->JsonObj, "distances");
+    ast_node *DurationsNode = shget(TravelMatrixNode->JsonObj, "durations");
+
+    int MatrixValueCount = InputRouteData->PointCount * InputRouteData->PointCount;
+
+    InputRouteData->TravelMatrix.PointCount = InputRouteData->PointCount;
+    InputRouteData->TravelMatrix.Distances = PushArray(Arena, int, MatrixValueCount);
+    InputRouteData->TravelMatrix.Durations = PushArray(Arena, int, MatrixValueCount);
+
+    for(int FromIndex = 0;
+        FromIndex < InputRouteData->PointCount;
+        ++FromIndex)
+    {
+        ast_node *DistanceRow = DistancesNode->JsonArr[FromIndex];
+        ast_node *DurationRow = DurationsNode->JsonArr[FromIndex];
+
+        for(int ToIndex = 0;
+            ToIndex < InputRouteData->PointCount;
+            ++ToIndex)
+        {
+            int MatrixIndex = FromIndex * InputRouteData->PointCount + ToIndex;
+
+            InputRouteData->TravelMatrix.Distances[MatrixIndex] = DistanceRow->JsonArr[ToIndex]->JsonNum;
+            InputRouteData->TravelMatrix.Durations[MatrixIndex] = DurationRow->JsonArr[ToIndex]->JsonNum;
+        }
+    }
+
+    // NOTE(denis): Current JSON has no explicit route request fields.
+    InputRouteData->StartMatrixIndex = 0;
+    InputRouteData->StartTime = 540;
+    InputRouteData->EndTime = 1080;
+}
+
+func void
+SolveRoute(input_route_data *InputRouteData, route_result *RouteResult, arena *Arena)
+{
+    // TODO: This is the first algorithm-level function to write.
+    // NOTE(denis): Expected future call order:
+    // 1. ValidateInputRouteData(InputRouteData)
+    // 2. PrepareSolverScratch(InputRouteData, Arena)
+    // 3. SolveGreedyRoute(InputRouteData, RouteResult, Arena)
+    // 4. MaybeImproveRouteByLocalSearch(InputRouteData, RouteResult, Arena)
+    // 5. BuildJsonRouteResponse(RouteResult)
+
+    RouteResult->VisitCount = 0;
+    RouteResult->TotalScore = 0;
+    RouteResult->TotalTravelTime = 0;
+    RouteResult->TotalWaitingTime = 0;
+    RouteResult->FinishTime = InputRouteData->StartTime;
+
+    (void)Arena;
+}
+
+func void
+PrintInputRouteData(input_route_data *InputRouteData)
+{
+    printf("point_count: %d\n", InputRouteData->PointCount);
+    printf("start_matrix_index: %d\n", InputRouteData->StartMatrixIndex);
+    printf("time window: %d..%d\n", InputRouteData->StartTime, InputRouteData->EndTime);
+
+    for(int PointIndex = 0;
+        PointIndex < InputRouteData->PointCount;
+        ++PointIndex)
+    {
+        route_point *Point = InputRouteData->Points + PointIndex;
+
+        printf(
+            "point[%d]: id=%s name=%s lat=%f lon=%f category=%s rating=%f reviews=%d score=%d duration=%d window=%d..%d\n",
+            PointIndex,
+            Point->ID,
+            Point->Name,
+            Point->Lat,
+            Point->Lon,
+            Point->Category,
+            Point->Rating,
+            Point->Reviews,
+            Point->Score,
+            Point->VisitDuration,
+            Point->OpenTime,
+            Point->CloseTime
+        );
+    }
+
+    printf(
+        "distance[0][1]: %d meters\n",
+        GetTravelDistance(&InputRouteData->TravelMatrix, 0, 1)
+    );
+
+    printf(
+        "duration[0][1]: %d seconds\n",
+        GetTravelDuration(&InputRouteData->TravelMatrix, 0, 1)
+    );
+}
+
 int main()
 {
     char *JsonString =
         "{"
-        "\"request_id\":\"demo-route-001\","
-        "\"city\":\"tula\","
-        "\"movement_mode\":\"walking\","
-        "\"start_time\":540,"
-        "\"end_time\":960,"
-        "\"start\":{"
-        "    \"id\":0,"
-        "    \"lat_e7\":541930331,"
-        "    \"lon_e7\":371796396"
-        "},"
-        "\"pois\":["
-        "    {"
-        "        \"id\":101,"
-        "        \"matrix_index\":1,"
-        "        \"lat_e7\":541969120,"
-        "        \"lon_e7\":371844820,"
-        "        \"score\":10,"
-        "        \"visit_duration\":60,"
-        "        \"open_time\":600,"
-        "        \"close_time\":1080"
-        "    },"
-        "    {"
-        "        \"id\":102,"
-        "        \"matrix_index\":2,"
-        "        \"lat_e7\":541878340,"
-        "        \"lon_e7\":371743710,"
-        "        \"score\":7,"
-        "        \"visit_duration\":40,"
-        "        \"open_time\":480,"
-        "        \"close_time\":1200"
-        "    },"
-        "    {"
-        "        \"id\":103,"
-        "        \"matrix_index\":3,"
-        "        \"lat_e7\":542012000,"
-        "        \"lon_e7\":371900000,"
-        "        \"score\":8,"
-        "        \"visit_duration\":50,"
-        "        \"open_time\":720,"
-        "        \"close_time\":1020"
+        "    \"points\": ["
+        "        {"
+        "            \"id\": \"123456\","
+        "            \"name\": \"Ресторан Пушкин\","
+        "            \"lat\": 55.7558,"
+        "            \"lon\": 37.6176,"
+        "            \"category\": \"restaurant\","
+        "            \"rubric\": \"Ресторан\","
+        "            \"working_hours\": \"Пн-Вс 10:00-22:00\","
+        "            \"rating\": 4.7,"
+        "            \"reviews\": 1234"
+        "        },"
+        "        {"
+        "            \"id\": \"789012\","
+        "            \"name\": \"Музей Оружия\","
+        "            \"lat\": 54.2045,"
+        "            \"lon\": 37.6188,"
+        "            \"category\": \"museum\","
+        "            \"rubric\": \"Музей\","
+        "            \"working_hours\": \"Пн-Вс 10:00-20:00\","
+        "            \"rating\": 4.8,"
+        "            \"reviews\": 2500"
+        "        },"
+        "        {"
+        "            \"id\": \"345678\","
+        "            \"name\": \"Центральный парк\","
+        "            \"lat\": 54.1810,"
+        "            \"lon\": 37.5900,"
+        "            \"category\": \"park\","
+        "            \"rubric\": \"Парк\","
+        "            \"working_hours\": \"Пн-Вс 00:00-23:59\","
+        "            \"rating\": 4.6,"
+        "            \"reviews\": 3100"
+        "        }"
+        "    ],"
+        "    \"travel_matrix\": {"
+        "        \"distances\": ["
+        "            [0, 1234, 5678],"
+        "            [1234, 0, 4321],"
+        "            [5678, 4321, 0]"
+        "        ],"
+        "        \"durations\": ["
+        "            [0, 120, 300],"
+        "            [120, 0, 250],"
+        "            [300, 250, 0]"
+        "        ]"
         "    }"
-        "],"
-        "\"travel_time_matrix\":["
-        "    [0,12,8,20],"
-        "    [12,0,15,9],"
-        "    [8,15,0,18],"
-        "    [20,9,18,0]"
-        "]"
         "}";
+
+    arena *RouteArena = ArenaAlloc(Megabytes(1));
 
     ast_node *AST = Marshal(JsonString);
 
-    ast_node *RequestID = shget(AST->JsonObj, "request_id");
-    ast_node *City = shget(AST->JsonObj, "city");
-    ast_node *MovementMode = shget(AST->JsonObj, "movement_mode");
-    ast_node *StartTime = shget(AST->JsonObj, "start_time");
-    ast_node *EndTime = shget(AST->JsonObj, "end_time");
+    input_route_data InputRouteData = {};
+    BuildInputRouteDataFromJson(AST, &InputRouteData, RouteArena);
 
-    printf("request_id: %s\n", RequestID->JsonStr);
-    printf("city: %s\n", City->JsonStr);
-    printf("movement_mode: %s\n", MovementMode->JsonStr);
-    printf("time window: %d..%d\n", StartTime->JsonNum, EndTime->JsonNum);
+    route_result RouteResult = {};
+    RouteResult.Visits = PushArray(RouteArena, visit, InputRouteData.PointCount);
 
-    ast_node *Start = shget(AST->JsonObj, "start");
-    ast_node *StartID = shget(Start->JsonObj, "id");
-    ast_node *StartLat = shget(Start->JsonObj, "lat_e7");
-    ast_node *StartLon = shget(Start->JsonObj, "lon_e7");
-
-    printf("start: id=%d lat_e7=%d lon_e7=%d\n",
-           StartID->JsonNum,
-           StartLat->JsonNum,
-           StartLon->JsonNum);
-
-    ast_node *Pois = shget(AST->JsonObj, "pois");
-    printf("pois: %ld\n", arrlen(Pois->JsonArr));
-
-    for(int PoiIndex = 0; PoiIndex < arrlen(Pois->JsonArr); ++PoiIndex)
-    {
-        ast_node *Poi = Pois->JsonArr[PoiIndex];
-        ast_node *ID = shget(Poi->JsonObj, "id");
-        ast_node *MatrixIndex = shget(Poi->JsonObj, "matrix_index");
-        ast_node *Score = shget(Poi->JsonObj, "score");
-        ast_node *VisitDuration = shget(Poi->JsonObj, "visit_duration");
-        ast_node *OpenTime = shget(Poi->JsonObj, "open_time");
-        ast_node *CloseTime = shget(Poi->JsonObj, "close_time");
-
-        printf("poi[%d]: id=%d matrix_index=%d score=%d duration=%d window=%d..%d\n",
-               PoiIndex,
-               ID->JsonNum,
-               MatrixIndex->JsonNum,
-               Score->JsonNum,
-               VisitDuration->JsonNum,
-               OpenTime->JsonNum,
-               CloseTime->JsonNum);
-    }
-
-    ast_node *TravelTimeMatrix = shget(AST->JsonObj, "travel_time_matrix");
-    ast_node *FirstRow = TravelTimeMatrix->JsonArr[0];
-    ast_node *StartToFirstPoi = FirstRow->JsonArr[1];
-
-    printf("travel start->poi101: %d minutes\n", StartToFirstPoi->JsonNum);
+    PrintInputRouteData(&InputRouteData);
+    SolveRoute(&InputRouteData, &RouteResult, RouteArena);
 
     // Too slow right now. Parser arenas can be freed later when ownership is cleaned up.
     // We use all AST data through the program, so we do not really need clean it up.
     // FreeJsonASTRecursively(AST);
+
+    ArenaFree(RouteArena);
 
     return 0;
 }

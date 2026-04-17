@@ -243,7 +243,14 @@ token_list Lexer(char *JsonString, simple_json_context *Ctx)
             char *String = PushArray(Ctx->StringsArena, char, 256);
             int StringIndex = 0;
 
-            // TODO: collapse it into function.
+            if(Ch == '-')
+            {
+                String[StringIndex] = Ch;
+                ++CharIndex;
+                ++StringIndex;
+                Ch = JsonString[CharIndex];
+            }
+
             while(isdigit(Ch) && CharIndex < JsonStringLength)
             {
                 String[StringIndex] = Ch;
@@ -251,6 +258,23 @@ token_list Lexer(char *JsonString, simple_json_context *Ctx)
                 ++StringIndex;
                 Ch = JsonString[CharIndex];
             }
+
+            if(Ch == '.')
+            {
+                String[StringIndex] = Ch;
+                ++CharIndex;
+                ++StringIndex;
+                Ch = JsonString[CharIndex];
+
+                while(isdigit(Ch) && CharIndex < JsonStringLength)
+                {
+                    String[StringIndex] = Ch;
+                    ++CharIndex;
+                    ++StringIndex;
+                    Ch = JsonString[CharIndex];
+                }
+            }
+
             String[StringIndex] = '\0';
 
             token NewToken = {0};               // FIXME: not working on linux.
@@ -434,6 +458,7 @@ ast_node *ParseValue(token **Token, simple_json_context *Ctx)
             ZeroStruct(&ResultASTNode);
             ResultASTNode.Type = ASTNODE_NUMBER;
             ResultASTNode.JsonNum = atoi((*Token)->Value);
+            ResultASTNode.JsonFloat = atof((*Token)->Value);
             ast_node *NewASTNode = CreateASTNode(ResultASTNode, Ctx);
 
             return NewASTNode;
