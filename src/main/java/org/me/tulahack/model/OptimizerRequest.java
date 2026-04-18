@@ -23,4 +23,10 @@ public class OptimizerRequest {
 
     @JsonProperty("travel_matrix")
     private TravelMatrix travelMatrix;
+
+    @JsonProperty("start_time")
+    private int startTime;
+
+    @JsonProperty("end_time")
+    private int endTime;
 }

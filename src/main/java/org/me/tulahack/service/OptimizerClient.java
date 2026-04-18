@@ -52,6 +52,7 @@ public class OptimizerClient {
             Files.createDirectories(outputFile.getParent());
 
             objectMapper.writeValue(inputFile.toFile(), request);
+            Files.deleteIfExists(outputFile);
 
             System.out.println("Optimizer input:  " + inputFile.toAbsolutePath());
             System.out.println("Optimizer output: " + outputFile.toAbsolutePath());
@@ -62,7 +63,12 @@ public class OptimizerClient {
                     outputFile.toAbsolutePath().toString()
             ).inheritIO().start();
 
-            process.waitFor();
+            int exitCode = process.waitFor();
+
+            if (exitCode != 0 || !Files.exists(outputFile)) {
+                System.err.println("Optimizer exited with code " + exitCode);
+                return buildFallback(request.getPoints().size());
+            }
 
             return objectMapper.readValue(outputFile.toFile(), OptimizerResponse.class);
 

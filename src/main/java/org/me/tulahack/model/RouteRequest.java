@@ -21,7 +21,11 @@ public class RouteRequest {
     private List<String> categories;
 
     @Min(1) @Max(10)
-    private int maxPois = 5;
+    private int maxPois = 1;
 
     private String transportMode = "driving-car";
+
+    private String departureTime = "09:00";
+
+    private String endTime = "18:00";
 }

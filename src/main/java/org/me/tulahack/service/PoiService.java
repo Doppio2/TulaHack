@@ -45,16 +45,22 @@ public class PoiService {
         double latDiff = Math.abs(start.lat() - end.lat());
         double lonDiff = Math.abs(start.lon() - end.lon());
         int radiusMeters = (int) (Math.max(latDiff, lonDiff) * 111000 / 2) + 1000;
-        radiusMeters = Math.min(radiusMeters, 10000);
+        radiusMeters = Math.max(radiusMeters, 3000);
+        radiusMeters = Math.min(radiusMeters, 50000);
 
-        int perCategory = Math.max(1, maxTotal / categories.size());
+        int perCategory = maxTotal;
 
         List<PointOfInterest> all = new ArrayList<>();
+        Set<String> seenIds = new HashSet<>();
 
         for (String category : categories) {
             List<PointOfInterest> pois = fetchByCategory(
                     category, centerLat, centerLon, radiusMeters, perCategory);
-            all.addAll(pois);
+            for (PointOfInterest poi : pois) {
+                if (seenIds.add(poi.getId())) {
+                    all.add(poi);
+                }
+            }
         }
 
         return all.stream().limit(maxTotal).collect(Collectors.toList());

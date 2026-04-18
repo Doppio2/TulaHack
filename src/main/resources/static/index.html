@@ -61,6 +61,19 @@
     }
     input[type="text"]:focus { border-color: #4cc9f0; }
 
+    input[type="time"] {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid #0f3460;
+      background: #0f3460;
+      color: #eee;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="time"]:focus { border-color: #4cc9f0; }
+
     .field-group { display: flex; flex-direction: column; position: relative; }
 
     .autocomplete-list {
@@ -227,6 +240,13 @@
       display: flex; align-items: center; justify-content: center;
       flex-shrink: 0;
     }
+    .poi-time {
+      margin-left: auto;
+      font-size: 0.78rem;
+      color: #4cc9f0;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
 
     /* ===== MAP ===== */
     #map {
@@ -310,10 +330,10 @@
   </div>
 
   <div class="field-group">
-    <label class="field-label">Макс. точек интереса: <span id="maxPoisVal">5</span></label>
+    <label class="field-label">Макс. точек интереса: <span id="maxPoisVal">1</span></label>
     <div class="slider-row">
       <span style="font-size:0.8rem;color:#aaa">1</span>
-      <input type="range" id="maxPois" min="1" max="10" value="5"/>
+      <input type="range" id="maxPois" min="1" max="10" value="1"/>
       <span style="font-size:0.8rem;color:#aaa">10</span>
     </div>
   </div>
@@ -325,6 +345,16 @@
       <div class="transport-btn" data-mode="cycling-regular">🚲 Вело</div>
       <div class="transport-btn" data-mode="foot-walking">🚶 Пешком</div>
     </div>
+  </div>
+
+  <div class="field-group">
+    <label class="field-label">Время отправления</label>
+    <input type="time" id="departureTime" value="09:00"/>
+  </div>
+
+  <div class="field-group">
+    <label class="field-label">Время окончания</label>
+    <input type="time" id="endTime" value="18:00"/>
   </div>
 
   <button id="buildBtn">Построить маршрут</button>
@@ -368,6 +398,7 @@
   }).addTo(map);
 
   // ===== STATE =====
+  let naiveLine = null;
   let optimizedLine = null;
   let markers = [];
   let transportMode = 'driving-car';
@@ -450,6 +481,7 @@
   function clearMap() {
     markers.forEach(m => map.removeLayer(m));
     markers = [];
+    if (naiveLine) { map.removeLayer(naiveLine); naiveLine = null; }
     if (optimizedLine) { map.removeLayer(optimizedLine); optimizedLine = null; }
   }
 
@@ -463,6 +495,12 @@
     return meters >= 1000
       ? (meters / 1000).toFixed(1) + ' км'
       : Math.round(meters) + ' м';
+  }
+
+  function formatMin(m) {
+    const h = Math.floor(m / 60) % 24;
+    const min = m % 60;
+    return String(h).padStart(2,'0') + ':' + String(min).padStart(2,'0');
   }
 
   function makeIcon(color, label) {
@@ -508,7 +546,9 @@
       const resp = await fetch('/api/route/build', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ startAddress, endAddress, categories, maxPois, transportMode })
+        body: JSON.stringify({ startAddress, endAddress, categories, maxPois, transportMode,
+          departureTime: document.getElementById('departureTime').value || '09:00',
+          endTime: document.getElementById('endTime').value || '18:00' })
       });
 
       if (!resp.ok) {
@@ -556,8 +596,19 @@
     markers.push(endM);
     bounds.push([end.lat, end.lon]);
 
-    // --- Route line — geojson if present, fallback to straight lines ---
+    // --- Naive route (blue dashed) ---
     const coordsLatLon = coords.map(c => [c.lat, c.lon]);
+    if (data.naiveGeojson && data.naiveGeojson.features) {
+      naiveLine = L.geoJSON(data.naiveGeojson, {
+        style: { color: '#ef4444', weight: 5, opacity: 0.9, dashArray: '10 8' }
+      }).addTo(map);
+    } else {
+      naiveLine = L.polyline(coordsLatLon, {
+        color: '#ef4444', weight: 5, opacity: 0.9, dashArray: '10 8'
+      }).addTo(map);
+    }
+
+    // --- Optimized route (green) ---
     if (data.geojson && data.geojson.features) {
       optimizedLine = L.geoJSON(data.geojson, {
         style: { color: '#22c55e', weight: 4, opacity: 0.85 }
@@ -582,10 +633,21 @@
     // --- POI list ---
     const list = document.getElementById('poiList');
     list.innerHTML = '';
+    const scheduledCount = data.schedule ? data.schedule.length : 0;
     pois.forEach((poi, i) => {
       const div = document.createElement('div');
+      const missed = i >= scheduledCount;
       div.className = 'poi-item';
-      div.innerHTML = `<div class="poi-num">${i+1}</div><span>${poi.name}</span>`;
+      if (missed) {
+        div.style.borderLeft = '3px solid #ef4444';
+        div.style.opacity = '0.7';
+      }
+      const sch = data.schedule && data.schedule[i];
+      const timeStr = sch ? formatMin(sch.arrival_time) + '–' + formatMin(sch.visit_end_time) : '';
+      const timeHtml = missed
+        ? '<span class="poi-time" style="color:#ef4444">не успеваем</span>'
+        : (timeStr ? `<span class="poi-time">${timeStr}</span>` : '');
+      div.innerHTML = `<div class="poi-num" ${missed ? 'style="background:#ef4444"' : ''}>${i+1}</div><span${missed ? ' style="color:#ef4444"' : ''}>${poi.name}</span>${timeHtml}`;
       div.style.cursor = 'pointer';
       div.addEventListener('click', () => {
         map.setView([poi.lat, poi.lon], 16);

@@ -22,7 +22,11 @@ public class RouteResponse {
 
     private List<Coordinate> orderedCoordinates;
 
+    private List<ScheduleEntry> schedule;
+
     private Map<String, Object> geojson;
+
+    private Map<String, Object> naiveGeojson;
 
     private Long computationMs;
 }

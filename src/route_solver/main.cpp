@@ -17,7 +17,7 @@ int main(int ArgCount, char **Args)
     char *InputFilePath = Args[1];
     char *OutputFilePath = Args[2];
 
-    arena *RouteArena = ArenaAlloc(Megabytes(8));
+    arena *RouteArena = ArenaAlloc(Megabytes(64));
 
     char *JsonString = ReadEntireFile(InputFilePath, RouteArena);
 

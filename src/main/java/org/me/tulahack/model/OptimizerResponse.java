@@ -16,4 +16,7 @@ public class OptimizerResponse {
 
     @JsonProperty("computation_ms")
     private Long computationMs;
+
+    @JsonProperty("schedule")
+    private List<ScheduleEntry> schedule;
 }

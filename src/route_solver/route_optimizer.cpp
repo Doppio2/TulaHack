@@ -392,8 +392,8 @@ BuildInputRouteDataFromJson(ast_node *AST, input_route_data *InputRouteData, are
         }
     }
 
-    InputRouteData->StartTime = 540;
-    InputRouteData->EndTime = 1080;
+    InputRouteData->StartTime = GetJsonIntOrDefault(AST, "start_time", 540);
+    InputRouteData->EndTime = GetJsonIntOrDefault(AST, "end_time", 1080);
 }
 
 func bool
