@@ -5,8 +5,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
-
 @Data
 @Builder
 @NoArgsConstructor
@@ -33,6 +31,4 @@ public class PointOfInterest {
     private Integer reviews;
 
     private String contacts;
-
-    private List<String> photos;
 }

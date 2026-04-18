@@ -44,7 +44,7 @@ public class GeocodingService {
             throw new RuntimeException("Адрес не найден: " + address);
         }
 
-        Map<String, Object> first = results.get(0);
+        Map<String, Object> first = results.getFirst();
         double lat = Double.parseDouble((String) first.get("lat"));
         double lon = Double.parseDouble((String) first.get("lon"));
 

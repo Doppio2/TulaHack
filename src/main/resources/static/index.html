@@ -61,7 +61,28 @@
     }
     input[type="text"]:focus { border-color: #4cc9f0; }
 
-    .field-group { display: flex; flex-direction: column; }
+    .field-group { display: flex; flex-direction: column; position: relative; }
+
+    .autocomplete-list {
+      position: absolute;
+      top: 100%;
+      left: 0; right: 0;
+      background: #0f3460;
+      border: 1px solid #4cc9f0;
+      border-radius: 8px;
+      z-index: 1000;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .autocomplete-item {
+      padding: 9px 12px;
+      font-size: 0.82rem;
+      color: #ccc;
+      cursor: pointer;
+      border-bottom: 1px solid #1a4a80;
+    }
+    .autocomplete-item:last-child { border-bottom: none; }
+    .autocomplete-item:hover { background: #1a4a80; color: #fff; }
 
     /* ===== CATEGORIES ===== */
     .categories-grid {
@@ -340,14 +361,13 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
   // ===== MAP INIT =====
-  const map = L.map('map').setView([55.7558, 37.6176], 12);
+  const map = L.map('map', { attributionControl: false }).setView([55.7558, 37.6176], 12);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors',
+    attribution: '',
     maxZoom: 19
   }).addTo(map);
 
   // ===== STATE =====
-  let naiveLine = null;
   let optimizedLine = null;
   let markers = [];
   let transportMode = 'driving-car';
@@ -375,11 +395,61 @@
     });
   });
 
+  // ===== AUTOCOMPLETE =====
+  function setupAutocomplete(inputId) {
+    const input = document.getElementById(inputId);
+    const wrapper = input.closest('.field-group');
+    let timer = null;
+    let dropdown = null;
+
+    function removeDropdown() {
+      if (dropdown) { dropdown.remove(); dropdown = null; }
+    }
+
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      const q = input.value.trim();
+      if (q.length < 3) { removeDropdown(); return; }
+
+      timer = setTimeout(async () => {
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&addressdetails=1`,
+            { headers: { 'Accept-Language': 'ru' } }
+          );
+          const items = await res.json();
+          removeDropdown();
+          if (!items.length) return;
+
+          dropdown = document.createElement('div');
+          dropdown.className = 'autocomplete-list';
+          items.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'autocomplete-item';
+            div.textContent = item.display_name;
+            div.addEventListener('click', () => {
+              input.value = item.display_name;
+              removeDropdown();
+            });
+            dropdown.appendChild(div);
+          });
+          wrapper.appendChild(dropdown);
+        } catch {}
+      }, 350);
+    });
+
+    document.addEventListener('click', e => {
+      if (!wrapper.contains(e.target)) removeDropdown();
+    });
+  }
+
+  setupAutocomplete('startAddr');
+  setupAutocomplete('endAddr');
+
   // ===== HELPERS =====
   function clearMap() {
     markers.forEach(m => map.removeLayer(m));
     markers = [];
-    if (naiveLine) { map.removeLayer(naiveLine); naiveLine = null; }
     if (optimizedLine) { map.removeLayer(optimizedLine); optimizedLine = null; }
   }
 
@@ -486,20 +556,14 @@
     markers.push(endM);
     bounds.push([end.lat, end.lon]);
 
-    // --- Naive route (blue) — sequential order ---
-    const naiveCoords = coords.map(c => [c.lat, c.lon]);
-    naiveLine = L.polyline(naiveCoords, {
-      color: '#3b82f6', weight: 3, opacity: 0.5, dashArray: '6 6'
-    }).addTo(map);
-
-    // --- Optimized route (green) — from geojson if present ---
+    // --- Route line — geojson if present, fallback to straight lines ---
+    const coordsLatLon = coords.map(c => [c.lat, c.lon]);
     if (data.geojson && data.geojson.features) {
-      const geoLayer = L.geoJSON(data.geojson, {
+      optimizedLine = L.geoJSON(data.geojson, {
         style: { color: '#22c55e', weight: 4, opacity: 0.85 }
       }).addTo(map);
-      optimizedLine = geoLayer;
     } else {
-      optimizedLine = L.polyline(naiveCoords, {
+      optimizedLine = L.polyline(coordsLatLon, {
         color: '#22c55e', weight: 4, opacity: 0.85
       }).addTo(map);
     }

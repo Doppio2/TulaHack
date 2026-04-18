@@ -44,8 +44,8 @@ public class PoiService {
 
         double latDiff = Math.abs(start.lat() - end.lat());
         double lonDiff = Math.abs(start.lon() - end.lon());
-        int radiusMeters = (int) (Math.max(latDiff, lonDiff) * 111_000 / 2) + 1000;
-        radiusMeters = Math.min(radiusMeters, 10_000);
+        int radiusMeters = (int) (Math.max(latDiff, lonDiff) * 111000 / 2) + 1000;
+        radiusMeters = Math.min(radiusMeters, 10000);
 
         int perCategory = Math.max(1, maxTotal / categories.size());
 
@@ -73,7 +73,7 @@ public class PoiService {
                             .queryParam("page_size", limit)
                             .queryParam("fields", "items.point,items.address,items.rating," +
                                     "items.reviews_count,items.rubrics,items.schedule," +
-                                    "items.contact_groups,items.photos")
+                                    "items.contact_groups")
                             .queryParam("key", apiKey)
                             .build())
                     .retrieve()
@@ -141,16 +141,6 @@ public class PoiService {
                 }
             }
 
-            List<String> photos = new ArrayList<>();
-            List<Map> photoList = (List<Map>) item.get("photos");
-            if (photoList != null) {
-                photoList.stream()
-                        .map(p -> (String) p.get("url_template"))
-                        .filter(Objects::nonNull)
-                        .map(url -> url.replace("{width}", "800").replace("{height}", "600"))
-                        .forEach(photos::add);
-            }
-
             // Рубрику берём из массива rubrics, тип primary — это основная категория заведения
             String rubric = CATEGORY_RUBRICS.getOrDefault(category, category);
             List<Map> rubrics = (List<Map>) item.get("rubrics");
@@ -174,7 +164,6 @@ public class PoiService {
                     .rating(rating)
                     .reviews(reviews)
                     .contacts(contacts)
-                    .photos(photos)
                     .build();
 
         } catch (Exception e) {

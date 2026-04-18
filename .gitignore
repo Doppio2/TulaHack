@@ -5,6 +5,10 @@ src/main/resources/application.properties
 routes.db
 optimizer_input.json
 optimizer_output.json
+build/optimizer_input.json
+build/optimizer_output.json
+architecture.txt
+CLAUDE.md
 
 # Java / Maven
 HELP.md

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -18,6 +19,7 @@ public class RouteService {
     private final PoiService poiService;
     private final OptimizerClient optimizerClient;
     private final MatrixService matrixService;
+    private final DirectionsService directionsService;
     private final RouteRepository routeRepository;
     private final ObjectMapper objectMapper;
 
@@ -25,12 +27,14 @@ public class RouteService {
                         PoiService poiService,
                         OptimizerClient optimizerClient,
                         MatrixService matrixService,
+                        DirectionsService directionsService,
                         RouteRepository routeRepository,
                         ObjectMapper objectMapper) {
         this.geocodingService = geocodingService;
         this.poiService = poiService;
         this.optimizerClient = optimizerClient;
         this.matrixService = matrixService;
+        this.directionsService = directionsService;
         this.routeRepository = routeRepository;
         this.objectMapper = objectMapper;
     }
@@ -101,6 +105,8 @@ public class RouteService {
         orderedPois.forEach(p -> fullRoute.add(new Coordinate(p.getLat(), p.getLon())));
         fullRoute.add(end);
 
+        Map<String, Object> geojson = directionsService.fetchRouteGeojson(fullRoute, request.getTransportMode());
+
         double savingPercent = originalDistance > 0
                 ? (originalDistance - optimizedDistance) / originalDistance * 100
                 : 0;
@@ -125,6 +131,7 @@ public class RouteService {
                 .savingPercent(Math.round(savingPercent * 10.0) / 10.0)
                 .pois(orderedPois)
                 .orderedCoordinates(fullRoute)
+                .geojson(geojson)
                 .computationMs(computationMs)
                 .build();
     }
