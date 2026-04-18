@@ -6,12 +6,13 @@ import org.me.tulahack.model.OptimizerResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-// TODO: исправить гонку потоков — использовать уникальные имена файлов через UUID
+// TODO: исправить гонку потоков — использовать уникальные имена файлов через UUID/ устройство
 @Service
 public class OptimizerClient {
 
@@ -47,17 +48,26 @@ public class OptimizerClient {
             Path inputFile  = Path.of(inputFilePath);
             Path outputFile = Path.of(outputFilePath);
 
+            Files.createDirectories(inputFile.getParent());
+            Files.createDirectories(outputFile.getParent());
+
             objectMapper.writeValue(inputFile.toFile(), request);
 
-            Process process = new ProcessBuilder(optimizerPath)
-                    .inheritIO()
-                    .start();
+            System.out.println("Optimizer input:  " + inputFile.toAbsolutePath());
+            System.out.println("Optimizer output: " + outputFile.toAbsolutePath());
+
+            Process process = new ProcessBuilder(
+                    optimizerPath,
+                    inputFile.toAbsolutePath().toString(),
+                    outputFile.toAbsolutePath().toString()
+            ).inheritIO().start();
 
             process.waitFor();
 
             return objectMapper.readValue(outputFile.toFile(), OptimizerResponse.class);
 
         } catch (Exception e) {
+            e.printStackTrace();
             return buildFallback(request.getPoints().size());
         } finally {
             semaphore.release();

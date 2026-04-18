@@ -73,7 +73,12 @@ public class RouteService {
                             .build())
                     .collect(Collectors.toList());
 
-            OptimizerRequest optimizerRequest = new OptimizerRequest(optimizerPoints, matrix);
+            int startIndex = 0;
+            int endIndex = optimizerPoints.size() + 1;
+            int pointsOffset = 1;
+
+            OptimizerRequest optimizerRequest = new OptimizerRequest(
+                    optimizerPoints, startIndex, endIndex, pointsOffset, matrix);
             OptimizerResponse optimizerResponse = optimizerClient.optimize(optimizerRequest);
 
             if (optimizerResponse.getOptimizedOrder() != null) {
