@@ -682,7 +682,7 @@ PrintRouteResult(input_route_data *InputRouteData, route_result *RouteResult)
 }
 
 func bool
-WriteRouteResultJson(char *FilePath, route_result *RouteResult, long ComputationMs)
+WriteRouteResultJson(char *FilePath, route_result *RouteResult, u64 ComputationMs)
 {
     bool Result = false;
     FILE *File = fopen(FilePath, "wb");
@@ -708,7 +708,40 @@ WriteRouteResultJson(char *FilePath, route_result *RouteResult, long Computation
 
         fprintf(File, "],\n");
         fprintf(File, "  \"total_distance\": %d,\n", RouteResult->TotalDistance);
-        fprintf(File, "  \"computation_ms\": %ld\n", ComputationMs);
+        fprintf(File, "  \"computation_ms\": %llu,\n", (unsigned long long)ComputationMs);
+        fprintf(File, "  \"schedule\": [");
+
+        for(int VisitIndex = 0;
+            VisitIndex < RouteResult->VisitCount;
+            ++VisitIndex)
+        {
+            visit *Visit = RouteResult->Visits + VisitIndex;
+
+            if(VisitIndex > 0)
+            {
+                fprintf(File, ", ");
+            }
+
+            fprintf(
+                File,
+                "{"
+                "\"point_index\":%d,"
+                "\"arrival_time\":%d,"
+                "\"visit_start_time\":%d,"
+                "\"visit_end_time\":%d,"
+                "\"travel_from_previous\":%d,"
+                "\"waiting_time\":%d"
+                "}",
+                Visit->PointIndex,
+                Visit->ArrivalTime,
+                Visit->VisitStartTime,
+                Visit->VisitEndTime,
+                Visit->TravelFromPrevious,
+                Visit->WaitingTime
+            );
+        }
+
+        fprintf(File, "]\n");
         fprintf(File, "}\n");
 
         fclose(File);

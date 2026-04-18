@@ -109,6 +109,6 @@ func void SolveRoute(input_route_data *InputRouteData, route_result *RouteResult
 
 func void PrintInputRouteData(input_route_data *InputRouteData);
 func void PrintRouteResult(input_route_data *InputRouteData, route_result *RouteResult);
-func bool WriteRouteResultJson(char *FilePath, route_result *RouteResult, long ComputationMs);
+func bool WriteRouteResultJson(char *FilePath, route_result *RouteResult, u64 ComputationMs);
 
 #endif
