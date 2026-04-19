@@ -113,7 +113,8 @@ public class RouteService {
             int endTimeMin = parseTimeToMinutes(request.getEndTime());
 
             OptimizerRequest optimizerRequest = new OptimizerRequest(
-                    optimizerPoints, startIndex, endIndex, pointsOffset, matrix,
+                    optimizerPoints, request.getCategoryPriorities(),
+                    startIndex, endIndex, pointsOffset, matrix,
                     startTimeMin, endTimeMin);
             OptimizerResponse optimizerResponse = optimizerClient.optimize(optimizerRequest);
 

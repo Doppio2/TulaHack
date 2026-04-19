@@ -231,6 +231,40 @@ GetDefaultScore(route_point *Point)
     return Result;
 }
 
+func int
+GetCategoryPriorityOrDefault(ast_node *CategoryPrioritiesNode, char *Category, int DefaultValue)
+{
+    int Result = DefaultValue;
+
+    if(CategoryPrioritiesNode &&
+       CategoryPrioritiesNode->Type == ASTNODE_OBJECT &&
+       Category)
+    {
+        ast_node *PriorityNode = shget(CategoryPrioritiesNode->JsonObj, Category);
+
+        if(PriorityNode)
+        {
+            Result = PriorityNode->JsonNum;
+        }
+    }
+
+    return Result;
+}
+
+func int
+GetRoutePointScore(route_point *Point, ast_node *CategoryPrioritiesNode)
+{
+    int Result = GetDefaultScore(Point);
+    int CategoryPriority = GetCategoryPriorityOrDefault(CategoryPrioritiesNode, Point->Category, 0);
+
+    if(CategoryPriority > 0)
+    {
+        Result += CategoryPriority * 3;
+    }
+
+    return Result;
+}
+
 func time_min
 GetDefaultVisitDuration(route_point *Point)
 {
@@ -322,6 +356,7 @@ func void
 BuildInputRouteDataFromJson(ast_node *AST, input_route_data *InputRouteData, arena *Arena)
 {
     ast_node *PointsNode = shget(AST->JsonObj, "points");
+    ast_node *CategoryPrioritiesNode = shget(AST->JsonObj, "category_priorities");
 
     InputRouteData->StartMatrixIndex = GetJsonIntOrDefault(AST, "start_index", 0);
     InputRouteData->PointsOffset = GetJsonIntOrDefault(AST, "points_offset", 1);
@@ -363,7 +398,7 @@ BuildInputRouteDataFromJson(ast_node *AST, input_route_data *InputRouteData, are
         Point->Reviews = Reviews->JsonNum;
         Point->MatrixIndex = PointIndex + InputRouteData->PointsOffset;
 
-        Point->Score = GetDefaultScore(Point);
+        Point->Score = GetRoutePointScore(Point, CategoryPrioritiesNode);
         Point->VisitDuration = GetDefaultVisitDuration(Point);
         SetDefaultRoutePointSchedule(Point);
     }

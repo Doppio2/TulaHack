@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Min;
 import lombok.Data;
 
 import java.util.List;
+import java.util.Map;
 
 @Data
 public class RouteRequest {
@@ -18,6 +19,8 @@ public class RouteRequest {
     private String endAddress;
 
     private List<String> categories;
+
+    private Map<String, Integer> categoryPriorities;
 
     private List<String> places;
 

@@ -123,6 +123,37 @@
     .cat-icon { font-size: 1.1rem; }
     .cat-name { font-size: 0.82rem; color: #ccc; }
 
+    .priority-list {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+    .priority-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #0f3460;
+      border-radius: 8px;
+      padding: 7px 10px;
+      min-height: 36px;
+    }
+    .priority-row.hidden { display: none; }
+    .priority-name {
+      width: 92px;
+      font-size: 0.78rem;
+      color: #ccc;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .priority-value {
+      width: 22px;
+      text-align: right;
+      color: #4cc9f0;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+
     /* ===== MAX POI ===== */
     .slider-row {
       display: flex;
@@ -395,6 +426,52 @@
   </div>
 
   <div class="field-group mode-categories-only">
+    <label class="field-label">Приоритеты категорий</label>
+    <div class="priority-list" id="categoryPriorities">
+      <div class="priority-row" data-category="restaurant">
+        <span class="priority-name">🍽️ Рестораны</span>
+        <input type="range" class="priority-input" min="1" max="10" value="5"/>
+        <span class="priority-value">5</span>
+      </div>
+      <div class="priority-row" data-category="cafe">
+        <span class="priority-name">☕ Кафе</span>
+        <input type="range" class="priority-input" min="1" max="10" value="5"/>
+        <span class="priority-value">5</span>
+      </div>
+      <div class="priority-row" data-category="museum">
+        <span class="priority-name">🏛️ Музеи</span>
+        <input type="range" class="priority-input" min="1" max="10" value="5"/>
+        <span class="priority-value">5</span>
+      </div>
+      <div class="priority-row hidden" data-category="park">
+        <span class="priority-name">🌳 Парки</span>
+        <input type="range" class="priority-input" min="1" max="10" value="5"/>
+        <span class="priority-value">5</span>
+      </div>
+      <div class="priority-row hidden" data-category="shop">
+        <span class="priority-name">🛒 Магазины</span>
+        <input type="range" class="priority-input" min="1" max="10" value="5"/>
+        <span class="priority-value">5</span>
+      </div>
+      <div class="priority-row hidden" data-category="hotel">
+        <span class="priority-name">🏨 Отели</span>
+        <input type="range" class="priority-input" min="1" max="10" value="5"/>
+        <span class="priority-value">5</span>
+      </div>
+      <div class="priority-row hidden" data-category="pharmacy">
+        <span class="priority-name">💊 Аптеки</span>
+        <input type="range" class="priority-input" min="1" max="10" value="5"/>
+        <span class="priority-value">5</span>
+      </div>
+      <div class="priority-row hidden" data-category="atm">
+        <span class="priority-name">🏧 Банкоматы</span>
+        <input type="range" class="priority-input" min="1" max="10" value="5"/>
+        <span class="priority-value">5</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="field-group mode-categories-only">
     <label class="field-label">Макс. точек интереса: <span id="maxPoisVal">1</span></label>
     <div class="slider-row">
       <span style="font-size:0.8rem;color:#aaa">1</span>
@@ -480,8 +557,33 @@
       const cb = item.querySelector('input[type="checkbox"]');
       cb.checked = !cb.checked;
       item.classList.toggle('active', cb.checked);
+      syncCategoryPriorityRows();
     });
   });
+
+  function syncCategoryPriorityRows() {
+    const activeCategories = new Set(
+      [...document.querySelectorAll('.cat-item input:checked')].map(c => c.value)
+    );
+    document.querySelectorAll('.priority-row').forEach(row => {
+      row.classList.toggle('hidden', !activeCategories.has(row.dataset.category));
+    });
+  }
+
+  document.querySelectorAll('.priority-input').forEach(input => {
+    input.addEventListener('input', () => {
+      input.closest('.priority-row').querySelector('.priority-value').textContent = input.value;
+    });
+  });
+
+  function collectCategoryPriorities() {
+    const result = {};
+    document.querySelectorAll('.priority-row:not(.hidden)').forEach(row => {
+      const input = row.querySelector('.priority-input');
+      result[row.dataset.category] = parseInt(input.value, 10);
+    });
+    return result;
+  }
 
   // ===== SLIDER =====
   const maxPoisInput = document.getElementById('maxPois');
@@ -780,6 +882,7 @@
     if (currentMode === 'categories') {
       payload.endAddress = endAddress;
       payload.categories = categories;
+      payload.categoryPriorities = collectCategoryPriorities();
       payload.maxPois = maxPois;
     } else {
       payload.places = selectedPlaces.map(p => p.name);
