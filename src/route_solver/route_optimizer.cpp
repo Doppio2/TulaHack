@@ -263,6 +263,11 @@ SetDefaultRoutePointSchedule(route_point *Point)
         TryParseFirstTimeWindow(Point->WorkingHours, &OpenTime, &CloseTime);
     }
 
+    if(CloseTime > 0 && CloseTime <= OpenTime)
+    {
+        CloseTime += 1440;
+    }
+
     Point->OpenTime = OpenTime;
     Point->CloseTime = CloseTime;
 }

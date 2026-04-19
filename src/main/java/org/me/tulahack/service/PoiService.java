@@ -37,6 +37,49 @@ public class PoiService {
         this.timeout = Duration.ofSeconds(timeoutSeconds);
     }
 
+    public List<PointOfInterest> fetchPoisByNames(Coordinate center, List<String> names, int radiusMeters) {
+        List<PointOfInterest> result = new ArrayList<>();
+        Set<String> seenIds = new HashSet<>();
+        for (String name : names) {
+            if (name == null || name.isBlank()) continue;
+            List<PointOfInterest> items = fetchByQuery(name.trim(), center.lat(), center.lon(), radiusMeters, 5);
+            PointOfInterest nearest = items.stream()
+                    .min(Comparator.comparingDouble(p -> haversine(center.lat(), center.lon(), p.getLat(), p.getLon())))
+                    .orElse(null);
+            if (nearest != null && seenIds.add(nearest.getId())) {
+                result.add(nearest);
+            }
+        }
+        return result;
+    }
+
+    public List<Map<String, Object>> searchSuggestions(Coordinate center, String query, int radiusMeters) {
+        if (query == null || query.isBlank()) return List.of();
+        List<PointOfInterest> items = fetchByQuery(query.trim(), center.lat(), center.lon(), radiusMeters, 8);
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (PointOfInterest p : items) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", p.getId());
+            item.put("name", p.getName());
+            item.put("address", p.getAddress());
+            item.put("rubric", p.getRubric());
+            item.put("lat", p.getLat());
+            item.put("lon", p.getLon());
+            out.add(item);
+        }
+        return out;
+    }
+
+    private double haversine(double lat1, double lon1, double lat2, double lon2) {
+        final double R = 6_371_000;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return 2 * R * Math.asin(Math.sqrt(a));
+    }
+
     public List<PointOfInterest> fetchPois(Coordinate start, Coordinate end,
                                            List<String> categories, int maxTotal) {
         double centerLat = (start.lat() + end.lat()) / 2;
@@ -52,28 +95,33 @@ public class PoiService {
 
         List<PointOfInterest> all = new ArrayList<>();
         Set<String> seenIds = new HashSet<>();
+        Set<String> seenNames = new HashSet<>();
 
         for (String category : categories) {
-            List<PointOfInterest> pois = fetchByCategory(
-                    category, centerLat, centerLon, radiusMeters, perCategory);
+            String q = CATEGORY_RUBRICS.getOrDefault(category, category);
+            List<PointOfInterest> pois = fetchByQuery(q, centerLat, centerLon, radiusMeters, perCategory)
+                    .stream()
+                    .peek(p -> p.setCategory(category))
+                    .collect(Collectors.toList());
             for (PointOfInterest poi : pois) {
-                if (seenIds.add(poi.getId())) {
-                    all.add(poi);
-                }
+                if (!seenIds.add(poi.getId())) continue;
+                String nameKey = poi.getName().toLowerCase().trim();
+                if (!seenNames.add(nameKey)) continue;
+                all.add(poi);
             }
         }
 
         return all.stream().limit(maxTotal).collect(Collectors.toList());
     }
 
-    private List<PointOfInterest> fetchByCategory(String category,
-                                                   double lat, double lon,
-                                                   int radius, int limit) {
+    private List<PointOfInterest> fetchByQuery(String query,
+                                               double lat, double lon,
+                                               int radius, int limit) {
         try {
             Map response = webClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/3.0/items")
-                            .queryParam("q", CATEGORY_RUBRICS.getOrDefault(category, category))
+                            .queryParam("q", query)
                             .queryParam("point", lon + "," + lat)
                             .queryParam("radius", radius)
                             .queryParam("page_size", limit)
@@ -96,7 +144,7 @@ public class PoiService {
             if (items == null) return List.of();
 
             return items.stream()
-                    .map(item -> parseItem(item, category))
+                    .map(item -> parseItem(item, null))
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
 
@@ -148,7 +196,7 @@ public class PoiService {
             }
 
             // Рубрику берём из массива rubrics, тип primary — это основная категория заведения
-            String rubric = CATEGORY_RUBRICS.getOrDefault(category, category);
+            String rubric = category == null ? null : CATEGORY_RUBRICS.getOrDefault(category, category);
             List<Map> rubrics = (List<Map>) item.get("rubrics");
             if (rubrics != null) {
                 rubric = rubrics.stream()

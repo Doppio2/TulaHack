@@ -159,6 +159,57 @@
     }
     .transport-btn.active { border-color: #4cc9f0; background: #1a4a80; color: #fff; }
 
+    /* ===== MODE TABS ===== */
+    .mode-tabs {
+      display: flex;
+      gap: 6px;
+      background: #0f3460;
+      border-radius: 10px;
+      padding: 4px;
+    }
+    .mode-tab {
+      flex: 1;
+      padding: 9px;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 0.82rem;
+      color: #ccc;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      user-select: none;
+    }
+    .mode-tab.active { background: linear-gradient(135deg,#4cc9f0,#4361ee); color: #fff; font-weight: 600; }
+
+    /* ===== PLACES CHIPS ===== */
+    .chips-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px 5px 10px;
+      border-radius: 16px;
+      background: #1a4a80;
+      border: 1px solid #4cc9f0;
+      color: #fff;
+      font-size: 0.78rem;
+    }
+    .chip button {
+      background: none;
+      border: none;
+      color: #bcd;
+      cursor: pointer;
+      font-size: 0.9rem;
+      line-height: 1;
+      padding: 0 2px;
+    }
+    .chip button:hover { color: #fff; }
+    .chip .chip-sub { color: #9fc; font-size: 0.7rem; margin-left: 2px; }
+
     /* ===== BUILD BUTTON ===== */
     #buildBtn {
       width: 100%;
@@ -274,16 +325,30 @@
   <h1>🗺️ RouteOptimizer</h1>
 
   <div class="field-group">
+    <label class="field-label">Вариант построения маршрута</label>
+    <div class="mode-tabs">
+      <div class="mode-tab active" data-mode-id="categories">По категориям</div>
+      <div class="mode-tab" data-mode-id="places">По местам</div>
+    </div>
+  </div>
+
+  <div class="field-group">
     <label class="field-label">Начальная точка</label>
     <input type="text" id="startAddr" placeholder="Москва, Красная площадь"/>
   </div>
 
-  <div class="field-group">
+  <div class="field-group mode-categories-only">
     <label class="field-label">Конечная точка</label>
     <input type="text" id="endAddr" placeholder="Москва, Парк Горького"/>
   </div>
 
-  <div class="field-group">
+  <div class="field-group mode-places-only" style="display:none">
+    <label class="field-label">Места для посещения</label>
+    <input type="text" id="placeSearch" placeholder="Введите точку интереса..."/>
+    <div id="chipsWrap" class="chips-wrap"></div>
+  </div>
+
+  <div class="field-group mode-categories-only">
     <label class="field-label">Категории интересов</label>
     <div class="categories-grid">
       <label class="cat-item active">
@@ -329,7 +394,7 @@
     </div>
   </div>
 
-  <div class="field-group">
+  <div class="field-group mode-categories-only">
     <label class="field-label">Макс. точек интереса: <span id="maxPoisVal">1</span></label>
     <div class="slider-row">
       <span style="font-size:0.8rem;color:#aaa">1</span>
@@ -358,11 +423,13 @@
   </div>
 
   <button id="buildBtn">Построить маршрут</button>
+  <button id="historyBtn" style="width:100%;padding:10px;border-radius:8px;border:1px solid #0f3460;background:#0f3460;color:#ccc;cursor:pointer;font-size:0.85rem;transition:border-color 0.15s">История маршрутов</button>
+  <div id="historyBlock" style="display:none;flex-direction:column;gap:6px"></div>
   <div id="status"></div>
 
   <div id="results">
     <div class="legend">
-      <span><span class="legend-dot" style="background:#3b82f6"></span>Исходный</span>
+      <span><span class="legend-dot" style="background:#f72585"></span>Исходный</span>
       <span><span class="legend-dot" style="background:#22c55e"></span>Оптимальный</span>
     </div>
     <div class="stat-row">
@@ -376,6 +443,10 @@
     <div class="stat-row">
       <span class="stat-label">Экономия</span>
       <span class="stat-val yellow" id="saving">—</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Время маршрута</span>
+      <span class="stat-val" id="totalTime" style="color:#f472b6">—</span>
     </div>
     <div class="stat-row">
       <span class="stat-label">⚡ C++ алгоритм</span>
@@ -448,7 +519,13 @@
             `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&addressdetails=1`,
             { headers: { 'Accept-Language': 'ru' } }
           );
-          const items = await res.json();
+          const raw = await res.json();
+          const seen = new Set();
+          const items = raw.filter(it => {
+            if (seen.has(it.display_name)) return false;
+            seen.add(it.display_name);
+            return true;
+          });
           removeDropdown();
           if (!items.length) return;
 
@@ -476,6 +553,110 @@
 
   setupAutocomplete('startAddr');
   setupAutocomplete('endAddr');
+
+  // ===== MODE SWITCH =====
+  let currentMode = 'categories';
+  document.querySelectorAll('.mode-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      currentMode = tab.dataset.modeId;
+      const showCat = currentMode === 'categories';
+      document.querySelectorAll('.mode-categories-only').forEach(el => el.style.display = showCat ? '' : 'none');
+      document.querySelectorAll('.mode-places-only').forEach(el => el.style.display = showCat ? 'none' : '');
+    });
+  });
+
+  // ===== PLACES CHIPS =====
+  let selectedPlaces = []; // [{name, lat, lon}]
+
+  function renderChips() {
+    const wrap = document.getElementById('chipsWrap');
+    wrap.innerHTML = '';
+    selectedPlaces.forEach((p, i) => {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.innerHTML = `<span>${p.name}</span><button title="Удалить">✕</button>`;
+      chip.querySelector('button').addEventListener('click', () => {
+        selectedPlaces.splice(i, 1);
+        renderChips();
+      });
+      wrap.appendChild(chip);
+    });
+  }
+
+  async function geocodeStartForNear() {
+    const addr = document.getElementById('startAddr').value.trim();
+    if (!addr) return null;
+    try {
+      const res = await fetch('/api/geocode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: addr })
+      });
+      if (!res.ok) return null;
+      const c = await res.json();
+      return `${c.lat},${c.lon}`;
+    } catch { return null; }
+  }
+
+  function setupPlaceAutocomplete() {
+    const input = document.getElementById('placeSearch');
+    const wrapper = input.closest('.field-group');
+    let timer = null;
+    let dropdown = null;
+
+    function removeDropdown() { if (dropdown) { dropdown.remove(); dropdown = null; } }
+
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      const q = input.value.trim();
+      if (q.length < 2) { removeDropdown(); return; }
+      timer = setTimeout(async () => {
+        const near = await geocodeStartForNear();
+        try {
+          const url = `/api/poi/search?q=${encodeURIComponent(q)}` + (near ? `&near=${near}` : '');
+          const res = await fetch(url);
+          if (!res.ok) { removeDropdown(); return; }
+          const items = await res.json();
+          removeDropdown();
+          if (!items.length) return;
+          dropdown = document.createElement('div');
+          dropdown.className = 'autocomplete-list';
+          items.forEach(it => {
+            const row = document.createElement('div');
+            row.className = 'autocomplete-item';
+            const sub = it.address ? `<br/><span style="color:#8af;font-size:0.72rem">${it.address}</span>` : '';
+            row.innerHTML = `<b>${it.name}</b>${sub}`;
+            row.addEventListener('click', () => {
+              selectedPlaces.push({ name: it.name, lat: it.lat, lon: it.lon });
+              renderChips();
+              input.value = '';
+              removeDropdown();
+            });
+            dropdown.appendChild(row);
+          });
+          wrapper.appendChild(dropdown);
+        } catch { removeDropdown(); }
+      }, 300);
+    });
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && input.value.trim()) {
+        e.preventDefault();
+        selectedPlaces.push({ name: input.value.trim() });
+        renderChips();
+        input.value = '';
+        removeDropdown();
+      }
+    });
+
+    document.addEventListener('click', e => {
+      if (!wrapper.contains(e.target)) removeDropdown();
+    });
+  }
+
+  setupPlaceAutocomplete();
 
   // ===== HELPERS =====
   function clearMap() {
@@ -521,6 +702,52 @@
     });
   }
 
+  // ===== HISTORY =====
+  const transportLabels = {'driving-car':'🚗','cycling-regular':'🚲','foot-walking':'🚶'};
+
+  async function loadHistory() {
+    const block = document.getElementById('historyBlock');
+    try {
+      const res = await fetch('/api/route/history');
+      const routes = await res.json();
+      block.innerHTML = '';
+      if (!routes.length) {
+        block.innerHTML = '<div style="font-size:0.8rem;color:#888;text-align:center">Нет сохранённых маршрутов</div>';
+        block.style.display = 'flex';
+        return;
+      }
+      routes.forEach(r => {
+        const div = document.createElement('div');
+        div.style.cssText = 'background:#0f3460;border-radius:8px;padding:8px 12px;font-size:0.78rem;border:1px solid transparent';
+        const saving = r.savingPercent ? r.savingPercent.toFixed(1) + '%' : '0%';
+        const tIcon = transportLabels[r.transportMode] || '🚗';
+        const timeStr = r.totalTimeMinutes > 0 ? Math.floor(r.totalTimeMinutes/60) + 'ч ' + (r.totalTimeMinutes%60) + 'мин' : '—';
+        const shortStart = (r.startAddress || '?').split(',').slice(0,2).join(',');
+        const shortEnd = (r.endAddress || '?').split(',').slice(0,2).join(',');
+        div.innerHTML = `<div style="color:#4cc9f0;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${shortStart} → ${shortEnd}</div>`
+          + `<div style="color:#888;display:flex;gap:8px;flex-wrap:wrap"><span>${tIcon}</span><span>📍${r.poiCount || '?'}</span><span>⏱${timeStr}</span><span style="color:#4ade80">↓${saving}</span></div>`;
+        block.appendChild(div);
+      });
+      const clearBtn = document.createElement('button');
+      clearBtn.textContent = 'Очистить историю';
+      clearBtn.style.cssText = 'padding:6px;border-radius:6px;border:1px solid #ef4444;background:transparent;color:#ef4444;cursor:pointer;font-size:0.78rem;transition:background 0.15s';
+      clearBtn.onmouseenter = () => { clearBtn.style.background = '#ef4444'; clearBtn.style.color = '#fff'; };
+      clearBtn.onmouseleave = () => { clearBtn.style.background = 'transparent'; clearBtn.style.color = '#ef4444'; };
+      clearBtn.onclick = async () => {
+        await fetch('/api/route/history', { method: 'DELETE' });
+        block.innerHTML = '<div style="font-size:0.8rem;color:#888;text-align:center">Нет сохранённых маршрутов</div>';
+      };
+      block.appendChild(clearBtn);
+      block.style.display = 'flex';
+    } catch (e) { block.innerHTML = '<div style="color:#f72585;font-size:0.8rem">Ошибка загрузки</div>'; block.style.display = 'flex'; }
+  }
+
+  document.getElementById('historyBtn').addEventListener('click', () => {
+    const block = document.getElementById('historyBlock');
+    if (block.style.display === 'flex') { block.style.display = 'none'; return; }
+    loadHistory();
+  });
+
   // ===== BUILD ROUTE =====
   document.getElementById('buildBtn').addEventListener('click', async () => {
     const startAddress = document.getElementById('startAddr').value.trim();
@@ -528,11 +755,12 @@
     const categories   = [...document.querySelectorAll('.cat-item input:checked')].map(c => c.value);
     const maxPois      = parseInt(maxPoisInput.value);
 
-    if (!startAddress || !endAddress) {
-      setStatus('Введите начальную и конечную точки', true); return;
-    }
-    if (categories.length === 0) {
-      setStatus('Выберите хотя бы одну категорию', true); return;
+    if (!startAddress) { setStatus('Введите начальную точку', true); return; }
+    if (currentMode === 'categories') {
+      if (!endAddress) { setStatus('Введите конечную точку', true); return; }
+      if (categories.length === 0) { setStatus('Выберите хотя бы одну категорию', true); return; }
+    } else {
+      if (selectedPlaces.length === 0) { setStatus('Добавьте хотя бы одно место', true); return; }
     }
 
     const btn = document.getElementById('buildBtn');
@@ -542,13 +770,26 @@
     clearMap();
     document.getElementById('results').style.display = 'none';
 
+    const payload = {
+      mode: currentMode,
+      startAddress,
+      transportMode,
+      departureTime: document.getElementById('departureTime').value || '09:00',
+      endTime: document.getElementById('endTime').value || '18:00'
+    };
+    if (currentMode === 'categories') {
+      payload.endAddress = endAddress;
+      payload.categories = categories;
+      payload.maxPois = maxPois;
+    } else {
+      payload.places = selectedPlaces.map(p => p.name);
+    }
+
     try {
       const resp = await fetch('/api/route/build', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ startAddress, endAddress, categories, maxPois, transportMode,
-          departureTime: document.getElementById('departureTime').value || '09:00',
-          endTime: document.getElementById('endTime').value || '18:00' })
+        body: JSON.stringify(payload)
       });
 
       if (!resp.ok) {
@@ -582,8 +823,12 @@
 
     // --- POI markers ---
     pois.forEach((poi, i) => {
+      let popupHtml = `<b>${poi.name}</b><br/><small>${poi.rubric || poi.category}</small>`;
+      if (poi.rating) popupHtml += `<br/>★ ${poi.rating}` + (poi.reviews ? ` (${poi.reviews})` : '');
+      if (poi.workingHours) popupHtml += `<br/>🕐 ${poi.workingHours}`;
+      if (poi.address) popupHtml += `<br/><small style="color:#888">${poi.address}</small>`;
       const m = L.marker([poi.lat, poi.lon], { icon: makeIcon('#f59e0b', i + 1) })
-        .bindPopup(`<b>${poi.name}</b><br/><small>${poi.category}</small>`)
+        .bindPopup(popupHtml)
         .addTo(map);
       markers.push(m);
       bounds.push([poi.lat, poi.lon]);
@@ -630,6 +875,18 @@
     document.getElementById('compMs').textContent     =
       data.computationMs != null ? `${data.computationMs} мс` : '—';
 
+    if (data.schedule && data.schedule.length > 0) {
+      const depMin = parseInt(document.getElementById('departureTime').value.split(':')[0]) * 60
+        + parseInt(document.getElementById('departureTime').value.split(':')[1]);
+      const lastEnd = data.schedule[data.schedule.length - 1].visit_end_time;
+      const totalMin = lastEnd - depMin;
+      const h = Math.floor(totalMin / 60);
+      const m = totalMin % 60;
+      document.getElementById('totalTime').textContent = (h > 0 ? h + ' ч ' : '') + m + ' мин';
+    } else {
+      document.getElementById('totalTime').textContent = '—';
+    }
+
     // --- POI list ---
     const list = document.getElementById('poiList');
     list.innerHTML = '';
@@ -647,7 +904,8 @@
       const timeHtml = missed
         ? '<span class="poi-time" style="color:#ef4444">не успеваем</span>'
         : (timeStr ? `<span class="poi-time">${timeStr}</span>` : '');
-      div.innerHTML = `<div class="poi-num" ${missed ? 'style="background:#ef4444"' : ''}>${i+1}</div><span${missed ? ' style="color:#ef4444"' : ''}>${poi.name}</span>${timeHtml}`;
+      const ratingHtml = poi.rating ? `<span style="color:#facc15;font-size:0.75rem;flex-shrink:0">★${poi.rating}</span>` : '';
+      div.innerHTML = `<div class="poi-num" ${missed ? 'style="background:#ef4444"' : ''}>${i+1}</div><span${missed ? ' style="color:#ef4444"' : ''}>${poi.name}</span>${ratingHtml}${timeHtml}`;
       div.style.cursor = 'pointer';
       div.addEventListener('click', () => {
         map.setView([poi.lat, poi.lon], 16);

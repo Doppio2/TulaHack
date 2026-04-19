@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -42,17 +43,40 @@ public class RouteService {
 
     public RouteResponse buildRoute(RouteRequest request) throws JsonProcessingException {
         Coordinate start = geocodingService.geocode(request.getStartAddress());
-        Coordinate end = geocodingService.geocode(request.getEndAddress());
 
-        List<PointOfInterest> pois = poiService.fetchPois(
-                start, end, request.getCategories(), request.getMaxPois());
+        boolean placesMode = "places".equalsIgnoreCase(request.getMode());
+
+        Coordinate end;
+        if (placesMode || request.getEndAddress() == null || request.getEndAddress().isBlank()) {
+            end = start;
+        } else {
+            end = geocodingService.geocode(request.getEndAddress());
+        }
+
+        List<PointOfInterest> pois;
+        if (placesMode) {
+            List<String> places = request.getPlaces() == null ? List.of() : request.getPlaces();
+            if (places.isEmpty()) {
+                throw new IllegalArgumentException("Укажите хотя бы одно место для посещения");
+            }
+            pois = poiService.fetchPoisByNames(start, places, 15000);
+            if (pois.isEmpty()) {
+                throw new IllegalArgumentException("Не найдено ни одного места по указанным названиям");
+            }
+        } else {
+            if (request.getCategories() == null || request.getCategories().isEmpty()) {
+                throw new IllegalArgumentException("Выберите хотя бы одну категорию");
+            }
+            pois = poiService.fetchPois(
+                    start, end, request.getCategories(), request.getMaxPois());
+        }
 
         List<Coordinate> naiveCoords = pois.stream()
                 .map(p -> new Coordinate(p.getLat(), p.getLon()))
                 .collect(Collectors.toList());
         double originalDistance = calcTotalDistance(start, naiveCoords, end);
 
-        List<PointOfInterest> orderedPois = pois;
+        List<PointOfInterest> scheduledPois = pois;
         List<Integer> orderedIndices = IntStream.range(0, pois.size()).boxed().collect(Collectors.toList());
         List<ScheduleEntry> schedule = new ArrayList<>();
         double optimizedDistance = originalDistance;
@@ -97,11 +121,11 @@ public class RouteService {
                 orderedIndices = optimizerResponse.getOptimizedOrder().stream()
                         .filter(i -> i < pois.size())
                         .collect(Collectors.toList());
-                orderedPois = orderedIndices.stream()
+                scheduledPois = orderedIndices.stream()
                         .map(pois::get)
                         .collect(Collectors.toList());
 
-                List<Coordinate> optimizedCoords = orderedPois.stream()
+                List<Coordinate> optimizedCoords = scheduledPois.stream()
                         .map(p -> new Coordinate(p.getLat(), p.getLon()))
                         .collect(Collectors.toList());
                 optimizedDistance = calcTotalDistance(start, optimizedCoords, end);
@@ -111,20 +135,30 @@ public class RouteService {
                 if (optimizerResponse.getSchedule() != null) {
                     schedule = optimizerResponse.getSchedule();
                 }
-
-                if (optimizedDistance >= originalDistance) {
-                    orderedPois = pois;
-                    orderedIndices = IntStream.range(0, pois.size()).boxed().collect(Collectors.toList());
-                    optimizedDistance = originalDistance;
-                    schedule = new ArrayList<>();
-                }
             }
         }
 
-        if (schedule.isEmpty()) {
+        if (schedule.isEmpty() && !scheduledPois.isEmpty()) {
             int endTimeMin = parseTimeToMinutes(request.getEndTime());
-            schedule = buildFallbackSchedule(request.getDepartureTime(), endTimeMin, orderedIndices, orderedPois, matrix);
+            schedule = buildFallbackSchedule(request.getDepartureTime(), endTimeMin, orderedIndices, scheduledPois, matrix);
+            if (schedule.size() < scheduledPois.size()) {
+                scheduledPois = scheduledPois.subList(0, schedule.size());
+                orderedIndices = orderedIndices.subList(0, schedule.size());
+                List<Coordinate> trimmedCoords = scheduledPois.stream()
+                        .map(p -> new Coordinate(p.getLat(), p.getLon()))
+                        .collect(Collectors.toList());
+                optimizedDistance = calcTotalDistance(start, trimmedCoords, end);
+            }
         }
+
+        Set<String> scheduledIds = scheduledPois.stream()
+                .map(PointOfInterest::getId)
+                .collect(Collectors.toSet());
+        List<PointOfInterest> missedPois = pois.stream()
+                .filter(p -> !scheduledIds.contains(p.getId()))
+                .collect(Collectors.toList());
+        List<PointOfInterest> displayPois = new ArrayList<>(scheduledPois);
+        displayPois.addAll(missedPois);
 
         List<Coordinate> naiveRoute = new ArrayList<>();
         naiveRoute.add(start);
@@ -133,7 +167,7 @@ public class RouteService {
 
         List<Coordinate> fullRoute = new ArrayList<>();
         fullRoute.add(start);
-        orderedPois.forEach(p -> fullRoute.add(new Coordinate(p.getLat(), p.getLon())));
+        scheduledPois.forEach(p -> fullRoute.add(new Coordinate(p.getLat(), p.getLon())));
         fullRoute.add(end);
 
         Map<String, Object> naiveGeojson = directionsService.fetchRouteGeojson(naiveRoute, request.getTransportMode());
@@ -143,15 +177,28 @@ public class RouteService {
                 ? (originalDistance - optimizedDistance) / originalDistance * 100
                 : 0;
 
+        int totalTimeMinutes = 0;
+        if (!schedule.isEmpty()) {
+            int depMin = parseTimeToMinutes(request.getDepartureTime());
+            totalTimeMinutes = schedule.get(schedule.size() - 1).getVisitEndTime() - depMin;
+        }
+
+        List<String> categoriesForLabel = placesMode
+                ? (request.getPlaces() == null ? List.of() : request.getPlaces())
+                : (request.getCategories() == null ? List.of() : request.getCategories());
+
         Route route = Route.builder()
                 .startAddress(request.getStartAddress())
                 .endAddress(request.getEndAddress())
-                .categories(String.join(",", request.getCategories()))
+                .categories(String.join(",", categoriesForLabel))
                 .originalDistance(originalDistance)
                 .optimizedDistance(optimizedDistance)
                 .savingPercent(savingPercent)
+                .transportMode(request.getTransportMode())
+                .poiCount(scheduledPois.size())
+                .totalTimeMinutes(totalTimeMinutes)
                 .createdAt(LocalDateTime.now().toString())
-                .poisJson(objectMapper.writeValueAsString(orderedPois))
+                .poisJson(objectMapper.writeValueAsString(scheduledPois))
                 .build();
 
         Route saved = routeRepository.save(route);
@@ -161,7 +208,7 @@ public class RouteService {
                 .originalDistance(originalDistance)
                 .optimizedDistance(optimizedDistance)
                 .savingPercent(Math.round(savingPercent * 10.0) / 10.0)
-                .pois(orderedPois)
+                .pois(displayPois)
                 .orderedCoordinates(fullRoute)
                 .schedule(schedule)
                 .geojson(geojson)
@@ -172,6 +219,10 @@ public class RouteService {
 
     public List<Route> getHistory() {
         return routeRepository.findAllByOrderByCreatedAtDesc();
+    }
+
+    public void clearHistory() {
+        routeRepository.deleteAll();
     }
 
     private int parseTimeToMinutes(String time) {

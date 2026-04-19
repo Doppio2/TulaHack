@@ -27,6 +27,10 @@ public class Route {
     private double optimizedDistance;
     private double savingPercent;
 
+    private String transportMode;
+    private int poiCount;
+    private int totalTimeMinutes;
+
     private String createdAt;
 
     @Column(columnDefinition = "TEXT")
